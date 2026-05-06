@@ -222,14 +222,33 @@ cmd_query() {
     exit 1
   fi
 
-  local sql="${ARGV[@]:1}"
+  local format="column"
+  local sql_parts=()
+  local i=1
+  while [ $i -lt ${#ARGV[@]} ]; do
+    case "${ARGV[$i]}" in
+      --list) format="list" ;;
+      --csv) format="csv" ;;
+      *) sql_parts+=("${ARGV[$i]}") ;;
+    esac
+    i=$((i + 1))
+  done
+
+  local sql="${sql_parts[*]}"
   if [ -z "$sql" ]; then
-    send_error "Usage: fledge sql query <sql>"
+    send_error "Usage: fledge sql query [--list|--csv] <sql>"
     exit 1
   fi
 
+  local sqlite_flags
+  case "$format" in
+    list) sqlite_flags="-list -separator '|'" ;;
+    csv) sqlite_flags="-csv -header" ;;
+    *) sqlite_flags="-header -column" ;;
+  esac
+
   local result
-  result=$(send_exec "query" "sqlite3 -header -column '$db_path' \"$sql\"" "$PROJECT_ROOT")
+  result=$(send_exec "query" "sqlite3 $sqlite_flags '$db_path' \"$sql\"" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
@@ -284,7 +303,7 @@ cmd_help() {
   send_output "Commands:"
   send_output "  init [--path <db>]       Create a project database"
   send_output "  migrate [--dir <dir>]    Run SQL migrations"
-  send_output "  query <sql>              Execute a query"
+  send_output "  query [--list|--csv] <sql>  Execute a query"
   send_output "  schema                   Dump database schema"
 }
 
