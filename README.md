@@ -21,6 +21,15 @@ fledge plugins install CorvidLabs/fledge-plugin-sql
 
 - `sqlite3` on PATH (pre-installed on macOS)
 
+## Data Persistence
+
+Database files live in your project directory (default: `data.db`). Reinstalling the plugin (`fledge plugins install`) does **not** affect your database files — they are stored outside the plugin directory.
+
+## Security
+
+- SQL input is shell-escaped via `printf '%q'` before execution to prevent injection.
+- Migration filenames are validated and escaped before use.
+
 ## Development
 
 ```bash
