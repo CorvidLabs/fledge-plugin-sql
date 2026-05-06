@@ -240,7 +240,7 @@ cmd_query() {
     exit 1
   fi
 
-  local sql="${sql_parts[*]}"
+  local sql="${sql_parts[*]+${sql_parts[*]}}"
   if [ -z "$sql" ]; then
     send_error "Usage: fledge sql query [--list|--csv] <sql>"
     exit 1
