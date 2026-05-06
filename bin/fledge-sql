@@ -26,9 +26,8 @@ send_exec() {
 }
 
 send_store() {
-  local id="$1" key="$2" value="$3"
-  send "{\"type\":\"store\",\"id\":\"$id\",\"key\":\"$key\",\"value\":\"$value\"}"
-  recv
+  local key="$1" value="$2"
+  send "{\"type\":\"store\",\"key\":\"$key\",\"value\":\"$value\"}"
 }
 
 send_load() {
@@ -46,6 +45,13 @@ send_prompt() {
   fi
   recv
 }
+
+# --- Response parsing helpers ---
+
+resp_stdout() { printf '%s' "$1" | jq -r '.value.stdout // ""' 2>/dev/null; }
+resp_stderr() { printf '%s' "$1" | jq -r '.value.stderr // ""' 2>/dev/null; }
+resp_code() { printf '%s' "$1" | jq -r '.value.code // 0' 2>/dev/null; }
+resp_value() { printf '%s' "$1" | jq -r '.value // empty' 2>/dev/null; }
 
 # --- Parse init message ---
 
@@ -66,7 +72,7 @@ get_db_path() {
   local resp
   resp=$(send_load "load-db" "db_path")
   local val
-  val=$(printf '%s' "$resp" | jq -r '.value // empty' 2>/dev/null)
+  val=$(resp_value "$resp")
   if [ -n "$val" ]; then
     printf '%s' "$val"
   fi
@@ -91,7 +97,7 @@ cmd_init() {
   if [ -z "$db_path" ]; then
     local resp
     resp=$(send_prompt "prompt-path" "Database path:" ".fledge/data.db")
-    db_path=$(printf '%s' "$resp" | jq -r '.value' 2>/dev/null)
+    db_path=$(resp_value "$resp")
   fi
 
   if [[ "$db_path" != /* ]]; then
@@ -101,11 +107,11 @@ cmd_init() {
   local check
   check=$(send_exec "check-exists" "test -f '$db_path' && echo exists || echo missing" "$PROJECT_ROOT")
   local exists
-  exists=$(printf '%s' "$check" | jq -r '.stdout // ""' 2>/dev/null | tr -d '[:space:]')
+  exists=$(resp_stdout "$check" | tr -d '[:space:]')
 
   if [ "$exists" = "exists" ]; then
     send_output "Database already exists at $db_path"
-    send_store "store-db" "db_path" "$db_path" > /dev/null
+    send_store "db_path" "$db_path"
     exit 0
   fi
 
@@ -113,7 +119,7 @@ cmd_init() {
   dir=$(dirname "$db_path")
   send_exec "mkdir" "mkdir -p '$dir'" "$PROJECT_ROOT" > /dev/null
   send_exec "create-db" "sqlite3 '$db_path' 'SELECT 1;'" "$PROJECT_ROOT" > /dev/null
-  send_store "store-db" "db_path" "$db_path" > /dev/null
+  send_store "db_path" "$db_path"
   send_output "Created database at $db_path"
 }
 
@@ -144,7 +150,7 @@ cmd_migrate() {
   local check
   check=$(send_exec "check-dir" "test -d '$migrations_dir' && echo exists || echo missing" "$PROJECT_ROOT")
   local exists
-  exists=$(printf '%s' "$check" | jq -r '.stdout // ""' 2>/dev/null | tr -d '[:space:]')
+  exists=$(resp_stdout "$check" | tr -d '[:space:]')
 
   if [ "$exists" != "exists" ]; then
     send_output "No migrations directory found at $migrations_dir"
@@ -156,7 +162,7 @@ cmd_migrate() {
   local files_resp
   files_resp=$(send_exec "list-files" "ls -1 '$migrations_dir'/*.sql 2>/dev/null | sort" "$PROJECT_ROOT")
   local files
-  files=$(printf '%s' "$files_resp" | jq -r '.stdout // ""' 2>/dev/null)
+  files=$(resp_stdout "$files_resp")
 
   if [ -z "$files" ]; then
     send_output "No .sql migration files found."
@@ -172,7 +178,7 @@ cmd_migrate() {
     local already
     already=$(send_exec "check-$filename" "sqlite3 '$db_path' \"SELECT COUNT(*) FROM _migrations WHERE filename='$filename';\"" "$PROJECT_ROOT")
     local count
-    count=$(printf '%s' "$already" | jq -r '.stdout // "0"' 2>/dev/null | tr -d '[:space:]')
+    count=$(resp_stdout "$already" | tr -d '[:space:]')
 
     if [ "$count" != "0" ]; then
       continue
@@ -181,11 +187,11 @@ cmd_migrate() {
     local result
     result=$(send_exec "apply-$filename" "sqlite3 '$db_path' < '$filepath' && sqlite3 '$db_path' \"INSERT INTO _migrations (filename, applied_at) VALUES ('$filename', datetime('now'));\"" "$PROJECT_ROOT")
     local exit_code
-    exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+    exit_code=$(resp_code "$result")
 
     if [ "$exit_code" != "0" ]; then
       local stderr
-      stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+      stderr=$(resp_stderr "$result")
       send_error "Migration failed: $filename — $stderr"
       exit 1
     fi
@@ -218,17 +224,17 @@ cmd_query() {
   local result
   result=$(send_exec "query" "sqlite3 -header -column '$db_path' \"$sql\"" "$PROJECT_ROOT")
   local exit_code
-  exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+  exit_code=$(resp_code "$result")
 
   if [ "$exit_code" != "0" ]; then
     local stderr
-    stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+    stderr=$(resp_stderr "$result")
     send_error "Query failed: $stderr"
     exit 1
   fi
 
   local stdout
-  stdout=$(printf '%s' "$result" | jq -r '.stdout // ""' 2>/dev/null)
+  stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
     local escaped
     escaped=$(printf '%s' "$stdout" | jq -Rs '.')
@@ -249,17 +255,17 @@ cmd_schema() {
   local result
   result=$(send_exec "schema" "sqlite3 '$db_path' \"SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY name;\"" "$PROJECT_ROOT")
   local exit_code
-  exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+  exit_code=$(resp_code "$result")
 
   if [ "$exit_code" != "0" ]; then
     local stderr
-    stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+    stderr=$(resp_stderr "$result")
     send_error "Schema dump failed: $stderr"
     exit 1
   fi
 
   local stdout
-  stdout=$(printf '%s' "$result" | jq -r '.stdout // ""' 2>/dev/null)
+  stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
     local escaped
     escaped=$(printf '%s' "$stdout" | jq -Rs '.')
