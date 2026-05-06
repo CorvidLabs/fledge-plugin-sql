@@ -258,7 +258,9 @@ cmd_query() {
   esac
 
   local result
-  result=$(send_exec "query" "printf '%s' $(printf '%s' "$sql" | jq -Rsc .) | sqlite3 $sqlite_flags '$db_path'" "$PROJECT_ROOT")
+  local safe_sql
+  safe_sql=$(printf '%q' "$sql")
+  result=$(send_exec "query" "printf '%s' $safe_sql | sqlite3 $sqlite_flags '$db_path'" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
@@ -312,7 +314,9 @@ cmd_schema() {
   fi
 
   local result
-  result=$(send_exec "schema" "printf '%s' $(printf '%s' "$sql_query" | jq -Rsc .) | sqlite3 '$db_path'" "$PROJECT_ROOT")
+  local safe_sql_query
+  safe_sql_query=$(printf '%q' "$sql_query")
+  result=$(send_exec "schema" "printf '%s' $safe_sql_query | sqlite3 '$db_path'" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
