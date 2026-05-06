@@ -1,0 +1,5 @@
+[registry]
+name = "fledge-plugin-sql"
+
+[specs]
+sql = "specs/sql/sql.spec.md"

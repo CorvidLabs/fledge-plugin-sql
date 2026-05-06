@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- fledge-v1 protocol helpers ---
+
+send() { printf '%s\n' "$1"; }
+
+recv() {
+  local line
+  IFS= read -r line
+  printf '%s\n' "$line"
+}
+
+send_output() { send "{\"type\":\"output\",\"text\":\"$1\\n\"}"; }
+send_log() { send "{\"type\":\"log\",\"level\":\"$1\",\"message\":\"$2\"}"; }
+send_error() { send_log "error" "$1"; }
+
+send_exec() {
+  local id="$1" cmd="$2" cwd="${3:-}"
+  if [ -n "$cwd" ]; then
+    send "{\"type\":\"exec\",\"id\":\"$id\",\"command\":\"$cmd\",\"cwd\":\"$cwd\"}"
+  else
+    send "{\"type\":\"exec\",\"id\":\"$id\",\"command\":\"$cmd\"}"
+  fi
+  recv
+}
+
+send_store() {
+  local id="$1" key="$2" value="$3"
+  send "{\"type\":\"store\",\"id\":\"$id\",\"key\":\"$key\",\"value\":\"$value\"}"
+  recv
+}
+
+send_load() {
+  local id="$1" key="$2"
+  send "{\"type\":\"load\",\"id\":\"$id\",\"key\":\"$key\"}"
+  recv
+}
+
+send_prompt() {
+  local id="$1" message="$2" default="${3:-}"
+  if [ -n "$default" ]; then
+    send "{\"type\":\"prompt\",\"id\":\"$id\",\"message\":\"$message\",\"default\":\"$default\"}"
+  else
+    send "{\"type\":\"prompt\",\"id\":\"$id\",\"message\":\"$message\"}"
+  fi
+  recv
+}
+
+# --- Parse init message ---
+
+INIT=$(recv)
+ARGS=$(printf '%s' "$INIT" | jq -r '.args // [] | .[]' 2>/dev/null)
+PROJECT_ROOT=$(printf '%s' "$INIT" | jq -r '.project.root // "."' 2>/dev/null)
+
+declare -a ARGV=()
+while IFS= read -r arg; do
+  [ -n "$arg" ] && ARGV+=("$arg")
+done <<< "$ARGS"
+
+SUBCMD="${ARGV[0]:-help}"
+
+# --- Helper: get DB path from store ---
+
+get_db_path() {
+  local resp
+  resp=$(send_load "load-db" "db_path")
+  local val
+  val=$(printf '%s' "$resp" | jq -r '.value // empty' 2>/dev/null)
+  if [ -n "$val" ]; then
+    printf '%s' "$val"
+  fi
+}
+
+# --- Subcommands ---
+
+cmd_init() {
+  local db_path=""
+
+  local i=1
+  while [ $i -lt ${#ARGV[@]} ]; do
+    case "${ARGV[$i]}" in
+      --path)
+        i=$((i + 1))
+        db_path="${ARGV[$i]:-}"
+        ;;
+    esac
+    i=$((i + 1))
+  done
+
+  if [ -z "$db_path" ]; then
+    local resp
+    resp=$(send_prompt "prompt-path" "Database path:" ".fledge/data.db")
+    db_path=$(printf '%s' "$resp" | jq -r '.value' 2>/dev/null)
+  fi
+
+  if [[ "$db_path" != /* ]]; then
+    db_path="$PROJECT_ROOT/$db_path"
+  fi
+
+  local check
+  check=$(send_exec "check-exists" "test -f '$db_path' && echo exists || echo missing" "$PROJECT_ROOT")
+  local exists
+  exists=$(printf '%s' "$check" | jq -r '.stdout // ""' 2>/dev/null | tr -d '[:space:]')
+
+  if [ "$exists" = "exists" ]; then
+    send_output "Database already exists at $db_path"
+    send_store "store-db" "db_path" "$db_path" > /dev/null
+    exit 0
+  fi
+
+  local dir
+  dir=$(dirname "$db_path")
+  send_exec "mkdir" "mkdir -p '$dir'" "$PROJECT_ROOT" > /dev/null
+  send_exec "create-db" "sqlite3 '$db_path' 'SELECT 1;'" "$PROJECT_ROOT" > /dev/null
+  send_store "store-db" "db_path" "$db_path" > /dev/null
+  send_output "Created database at $db_path"
+}
+
+cmd_migrate() {
+  local db_path
+  db_path=$(get_db_path)
+  if [ -z "$db_path" ]; then
+    send_error "No database initialized. Run: fledge sql init"
+    exit 1
+  fi
+
+  local migrations_dir="$PROJECT_ROOT/migrations"
+
+  local i=1
+  while [ $i -lt ${#ARGV[@]} ]; do
+    case "${ARGV[$i]}" in
+      --dir)
+        i=$((i + 1))
+        migrations_dir="${ARGV[$i]:-}"
+        if [[ "$migrations_dir" != /* ]]; then
+          migrations_dir="$PROJECT_ROOT/$migrations_dir"
+        fi
+        ;;
+    esac
+    i=$((i + 1))
+  done
+
+  local check
+  check=$(send_exec "check-dir" "test -d '$migrations_dir' && echo exists || echo missing" "$PROJECT_ROOT")
+  local exists
+  exists=$(printf '%s' "$check" | jq -r '.stdout // ""' 2>/dev/null | tr -d '[:space:]')
+
+  if [ "$exists" != "exists" ]; then
+    send_output "No migrations directory found at $migrations_dir"
+    exit 0
+  fi
+
+  send_exec "create-meta" "sqlite3 '$db_path' 'CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, filename TEXT UNIQUE, applied_at TEXT);'" "$PROJECT_ROOT" > /dev/null
+
+  local files_resp
+  files_resp=$(send_exec "list-files" "ls -1 '$migrations_dir'/*.sql 2>/dev/null | sort" "$PROJECT_ROOT")
+  local files
+  files=$(printf '%s' "$files_resp" | jq -r '.stdout // ""' 2>/dev/null)
+
+  if [ -z "$files" ]; then
+    send_output "No .sql migration files found."
+    exit 0
+  fi
+
+  local applied=0
+  while IFS= read -r filepath; do
+    [ -z "$filepath" ] && continue
+    local filename
+    filename=$(basename "$filepath")
+
+    local already
+    already=$(send_exec "check-$filename" "sqlite3 '$db_path' \"SELECT COUNT(*) FROM _migrations WHERE filename='$filename';\"" "$PROJECT_ROOT")
+    local count
+    count=$(printf '%s' "$already" | jq -r '.stdout // "0"' 2>/dev/null | tr -d '[:space:]')
+
+    if [ "$count" != "0" ]; then
+      continue
+    fi
+
+    local result
+    result=$(send_exec "apply-$filename" "sqlite3 '$db_path' < '$filepath' && sqlite3 '$db_path' \"INSERT INTO _migrations (filename, applied_at) VALUES ('$filename', datetime('now'));\"" "$PROJECT_ROOT")
+    local exit_code
+    exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+
+    if [ "$exit_code" != "0" ]; then
+      local stderr
+      stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+      send_error "Migration failed: $filename — $stderr"
+      exit 1
+    fi
+
+    send_output "  Applied: $filename"
+    applied=$((applied + 1))
+  done <<< "$files"
+
+  if [ "$applied" -eq 0 ]; then
+    send_output "All migrations already applied."
+  else
+    send_output "Applied $applied migration(s)."
+  fi
+}
+
+cmd_query() {
+  local db_path
+  db_path=$(get_db_path)
+  if [ -z "$db_path" ]; then
+    send_error "No database initialized. Run: fledge sql init"
+    exit 1
+  fi
+
+  local sql="${ARGV[@]:1}"
+  if [ -z "$sql" ]; then
+    send_error "Usage: fledge sql query <sql>"
+    exit 1
+  fi
+
+  local result
+  result=$(send_exec "query" "sqlite3 -header -column '$db_path' \"$sql\"" "$PROJECT_ROOT")
+  local exit_code
+  exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+
+  if [ "$exit_code" != "0" ]; then
+    local stderr
+    stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+    send_error "Query failed: $stderr"
+    exit 1
+  fi
+
+  local stdout
+  stdout=$(printf '%s' "$result" | jq -r '.stdout // ""' 2>/dev/null)
+  if [ -n "$stdout" ]; then
+    local escaped
+    escaped=$(printf '%s' "$stdout" | jq -Rs '.')
+    send "{\"type\":\"output\",\"text\":$escaped}"
+  else
+    send_output "(no results)"
+  fi
+}
+
+cmd_schema() {
+  local db_path
+  db_path=$(get_db_path)
+  if [ -z "$db_path" ]; then
+    send_error "No database initialized. Run: fledge sql init"
+    exit 1
+  fi
+
+  local result
+  result=$(send_exec "schema" "sqlite3 '$db_path' \"SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY name;\"" "$PROJECT_ROOT")
+  local exit_code
+  exit_code=$(printf '%s' "$result" | jq -r '.exit_code // 0' 2>/dev/null)
+
+  if [ "$exit_code" != "0" ]; then
+    local stderr
+    stderr=$(printf '%s' "$result" | jq -r '.stderr // "unknown error"' 2>/dev/null)
+    send_error "Schema dump failed: $stderr"
+    exit 1
+  fi
+
+  local stdout
+  stdout=$(printf '%s' "$result" | jq -r '.stdout // ""' 2>/dev/null)
+  if [ -n "$stdout" ]; then
+    local escaped
+    escaped=$(printf '%s' "$stdout" | jq -Rs '.')
+    send "{\"type\":\"output\",\"text\":$escaped}"
+  else
+    send_output "(empty database)"
+  fi
+}
+
+cmd_help() {
+  send_output "fledge-plugin-sql — SQLite database management"
+  send_output ""
+  send_output "Commands:"
+  send_output "  init [--path <db>]       Create a project database"
+  send_output "  migrate [--dir <dir>]    Run SQL migrations"
+  send_output "  query <sql>              Execute a query"
+  send_output "  schema                   Dump database schema"
+}
+
+case "$SUBCMD" in
+  init)    cmd_init ;;
+  migrate) cmd_migrate ;;
+  query)   cmd_query ;;
+  schema)  cmd_schema ;;
+  help|--help|-h) cmd_help ;;
+  *)
+    send_error "Unknown command: $SUBCMD. Run: fledge sql help"
+    exit 1
+    ;;
+esac
