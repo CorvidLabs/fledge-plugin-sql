@@ -243,7 +243,7 @@ cmd_query() {
   local stdout
   stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
-    send "$(printf '%s' "$stdout" | jq -Rs '{type:"output",text:.}')"
+    send "$(printf '%s' "$stdout" | jq -Rsc '{type:"output",text:.}')"
   else
     send_output "(no results)"
   fi
@@ -272,7 +272,7 @@ cmd_schema() {
   local stdout
   stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
-    send "$(printf '%s' "$stdout" | jq -Rs '{type:"output",text:.}')"
+    send "$(printf '%s' "$stdout" | jq -Rsc '{type:"output",text:.}')"
   else
     send_output "(empty database)"
   fi
