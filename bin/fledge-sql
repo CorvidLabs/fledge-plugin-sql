@@ -215,24 +215,29 @@ cmd_migrate() {
 }
 
 cmd_query() {
-  local db_path
-  db_path=$(get_db_path)
-  if [ -z "$db_path" ]; then
-    send_error "No database initialized. Run: fledge sql init"
-    exit 1
-  fi
-
+  local db_path=""
   local format="column"
   local sql_parts=()
   local i=1
   while [ $i -lt ${#ARGV[@]} ]; do
     case "${ARGV[$i]}" in
+      --path) i=$((i + 1)); db_path="${ARGV[$i]:-}" ;;
       --list) format="list" ;;
       --csv) format="csv" ;;
       *) sql_parts+=("${ARGV[$i]}") ;;
     esac
     i=$((i + 1))
   done
+
+  if [ -z "$db_path" ]; then
+    db_path=$(get_db_path)
+  elif [[ "$db_path" != /* ]]; then
+    db_path="$PROJECT_ROOT/$db_path"
+  fi
+  if [ -z "$db_path" ]; then
+    send_error "No database initialized. Run: fledge sql init"
+    exit 1
+  fi
 
   local sql="${sql_parts[*]}"
   if [ -z "$sql" ]; then
@@ -269,8 +274,20 @@ cmd_query() {
 }
 
 cmd_schema() {
-  local db_path
-  db_path=$(get_db_path)
+  local db_path=""
+  local i=1
+  while [ $i -lt ${#ARGV[@]} ]; do
+    case "${ARGV[$i]}" in
+      --path) i=$((i + 1)); db_path="${ARGV[$i]:-}" ;;
+    esac
+    i=$((i + 1))
+  done
+
+  if [ -z "$db_path" ]; then
+    db_path=$(get_db_path)
+  elif [[ "$db_path" != /* ]]; then
+    db_path="$PROJECT_ROOT/$db_path"
+  fi
   if [ -z "$db_path" ]; then
     send_error "No database initialized. Run: fledge sql init"
     exit 1
@@ -301,10 +318,10 @@ cmd_help() {
   send_output "fledge-plugin-sql — SQLite database management"
   send_output ""
   send_output "Commands:"
-  send_output "  init [--path <db>]       Create a project database"
-  send_output "  migrate [--dir <dir>]    Run SQL migrations"
-  send_output "  query [--list|--csv] <sql>  Execute a query"
-  send_output "  schema                   Dump database schema"
+  send_output "  init [--path <db>]                  Create a project database"
+  send_output "  migrate [--dir <dir>]               Run SQL migrations"
+  send_output "  query [--path <db>] [--list|--csv] <sql>  Execute a query"
+  send_output "  schema [--path <db>]                Dump database schema"
 }
 
 case "$SUBCMD" in
