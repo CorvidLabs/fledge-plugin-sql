@@ -177,7 +177,7 @@ cmd_migrate() {
   fi
 
   local applied=0
-  while IFS= read -r filepath; do
+  while IFS= read -r filepath <&4; do
     [ -z "$filepath" ] && continue
     local filename
     filename=$(basename "$filepath")
@@ -205,7 +205,7 @@ cmd_migrate() {
 
     send_output "  Applied: $filename"
     applied=$((applied + 1))
-  done <<< "$files"
+  done 4<<< "$files"
 
   if [ "$applied" -eq 0 ]; then
     send_output "All migrations already applied."
