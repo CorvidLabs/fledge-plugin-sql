@@ -17,8 +17,7 @@ recv() {
 
 json_obj() { jq -cn "$@"; }
 
-send_output() { send "$(json_obj --arg t "$1
-" '{type:"output",text:$t}')"; }
+send_output() { send "$(json_obj --arg t "$1" '{type:"output",text:$t}')"; }
 send_log() { send "$(json_obj --arg l "$1" --arg m "$2" '{type:"log",level:$l,message:$m}')"; }
 send_error() { send_log "error" "$1"; }
 
@@ -194,8 +193,11 @@ cmd_migrate() {
       continue
     fi
 
+    # Wrap each migration + its tracking row in a single transaction so a
+    # partial failure cleanly rolls back. `-bail` aborts on first error;
+    # since COMMIT never runs, sqlite3's auto-rollback-on-close kicks in.
     local result
-    result=$(send_exec "apply-$filename" "sqlite3 '$db_path' < '$filepath' && printf '%s' 'INSERT INTO _migrations (filename, applied_at) VALUES ('\''${safe_filename}'\'', datetime('\''now'\''));' | sqlite3 '$db_path'" "$PROJECT_ROOT")
+    result=$(send_exec "apply-$filename" "(printf '%s' 'BEGIN;'; cat '$filepath'; printf '%s' 'INSERT INTO _migrations (filename, applied_at) VALUES ('\''${safe_filename}'\'', datetime('\''now'\''));COMMIT;') | sqlite3 -bail '$db_path'" "$PROJECT_ROOT")
     local exit_code
     exit_code=$(resp_code "$result")
 

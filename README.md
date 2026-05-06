@@ -71,9 +71,13 @@ Database files live in your project directory (default: `.fledge/fledge.db`). Re
 
 ## Security
 
-- SQL input is shell-escaped via `printf '%q'` before execution to prevent injection.
-- Migration filenames are validated and escaped before use.
-- The database file is created in the project-local `.fledge/` directory.
+This plugin shells out to the `sqlite3` CLI. The SQL string you pass is shell-escaped (via `printf '%q'`) before being piped to `sqlite3`, which prevents *shell* injection — your SQL won't be split into multiple commands or interpreted by the shell.
+
+**It does not prevent SQL injection.** SQL is passed verbatim to sqlite3. If you compose SQL with untrusted values via shell interpolation, you are responsible for escaping them — for example, **do not** write `fledge sql query "SELECT * FROM t WHERE name = '$user_input'"`. Either validate `$user_input` against an allowlist before substituting, or split the query into a parameterized form using a SQL client that supports bind parameters.
+
+Migration filenames are SQL-escaped before being inserted into the `_migrations` tracking table. Each migration runs inside a `BEGIN;…COMMIT;` transaction with `sqlite3 -bail`, so a partial failure rolls back cleanly.
+
+The database file is created in the project-local `.fledge/` directory by default.
 
 ## Prerequisites
 
