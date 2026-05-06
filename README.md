@@ -14,8 +14,8 @@ fledge plugins install CorvidLabs/fledge-plugin-sql
 |---------|-------------|
 | `fledge sql init [--path <db>]` | Create a project SQLite database |
 | `fledge sql migrate [--dir <dir>]` | Run SQL migration files |
-| `fledge sql query <sql>` | Execute a query and display results |
-| `fledge sql schema` | Dump the current database schema |
+| `fledge sql query [--path <db>] [--list\|--csv] <sql>` | Execute a query and display results |
+| `fledge sql schema [--path <db>]` | Dump the current database schema |
 
 ## Prerequisites
 
