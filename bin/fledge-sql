@@ -182,8 +182,11 @@ cmd_migrate() {
     local filename
     filename=$(basename "$filepath")
 
+    local safe_filename
+    safe_filename=$(printf '%s' "$filename" | sed "s/'/''/g")
+
     local already
-    already=$(send_exec "check-$filename" "sqlite3 '$db_path' \"SELECT COUNT(*) FROM _migrations WHERE filename='$filename';\"" "$PROJECT_ROOT")
+    already=$(send_exec "check-$filename" "printf '%s' 'SELECT COUNT(*) FROM _migrations WHERE filename='\''${safe_filename}'\'';' | sqlite3 '$db_path'" "$PROJECT_ROOT")
     local count
     count=$(resp_stdout "$already" | tr -d '[:space:]')
 
@@ -192,7 +195,7 @@ cmd_migrate() {
     fi
 
     local result
-    result=$(send_exec "apply-$filename" "sqlite3 '$db_path' < '$filepath' && sqlite3 '$db_path' \"INSERT INTO _migrations (filename, applied_at) VALUES ('$filename', datetime('now'));\"" "$PROJECT_ROOT")
+    result=$(send_exec "apply-$filename" "sqlite3 '$db_path' < '$filepath' && printf '%s' 'INSERT INTO _migrations (filename, applied_at) VALUES ('\''${safe_filename}'\'', datetime('\''now'\''));' | sqlite3 '$db_path'" "$PROJECT_ROOT")
     local exit_code
     exit_code=$(resp_code "$result")
 
@@ -255,7 +258,7 @@ cmd_query() {
   esac
 
   local result
-  result=$(send_exec "query" "sqlite3 $sqlite_flags '$db_path' \"$sql\"" "$PROJECT_ROOT")
+  result=$(send_exec "query" "printf '%s' $(printf '%s' "$sql" | jq -Rsc .) | sqlite3 $sqlite_flags '$db_path'" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
@@ -309,7 +312,7 @@ cmd_schema() {
   fi
 
   local result
-  result=$(send_exec "schema" "sqlite3 '$db_path' \"$sql_query\"" "$PROJECT_ROOT")
+  result=$(send_exec "schema" "printf '%s' $(printf '%s' "$sql_query" | jq -Rsc .) | sqlite3 '$db_path'" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
