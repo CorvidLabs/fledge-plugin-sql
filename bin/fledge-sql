@@ -224,6 +224,7 @@ cmd_query() {
       --path) i=$((i + 1)); db_path="${ARGV[$i]:-}" ;;
       --list) format="list" ;;
       --csv) format="csv" ;;
+      --json) format="json" ;;
       *) sql_parts+=("${ARGV[$i]}") ;;
     esac
     i=$((i + 1))
@@ -247,6 +248,7 @@ cmd_query() {
 
   local sqlite_flags
   case "$format" in
+    json) sqlite_flags="-json" ;;
     list) sqlite_flags="-list -separator '|'" ;;
     csv) sqlite_flags="-csv -header" ;;
     *) sqlite_flags="-header -column" ;;
@@ -269,16 +271,22 @@ cmd_query() {
   if [ -n "$stdout" ]; then
     send "$(printf '%s' "$stdout" | jq -Rsc '{type:"output",text:.}')"
   else
-    send_output "(no results)"
+    if [ "$format" = "json" ]; then
+      send_output "[]"
+    else
+      send_output "(no results)"
+    fi
   fi
 }
 
 cmd_schema() {
   local db_path=""
+  local format="text"
   local i=1
   while [ $i -lt ${#ARGV[@]} ]; do
     case "${ARGV[$i]}" in
       --path) i=$((i + 1)); db_path="${ARGV[$i]:-}" ;;
+      --json) format="json" ;;
     esac
     i=$((i + 1))
   done
@@ -293,8 +301,15 @@ cmd_schema() {
     exit 1
   fi
 
+  local sql_query
+  if [ "$format" = "json" ]; then
+    sql_query="SELECT json_group_array(json_object('type',type,'name',name,'sql',sql)) FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY name;"
+  else
+    sql_query="SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY name;"
+  fi
+
   local result
-  result=$(send_exec "schema" "sqlite3 '$db_path' \"SELECT sql FROM sqlite_master WHERE type IN ('table','index','view') AND sql IS NOT NULL ORDER BY name;\"" "$PROJECT_ROOT")
+  result=$(send_exec "schema" "sqlite3 '$db_path' \"$sql_query\"" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 
@@ -318,10 +333,10 @@ cmd_help() {
   send_output "fledge-plugin-sql — SQLite database management"
   send_output ""
   send_output "Commands:"
-  send_output "  init [--path <db>]                  Create a project database"
-  send_output "  migrate [--dir <dir>]               Run SQL migrations"
-  send_output "  query [--path <db>] [--list|--csv] <sql>  Execute a query"
-  send_output "  schema [--path <db>]                Dump database schema"
+  send_output "  init [--path <db>]                           Create a project database"
+  send_output "  migrate [--dir <dir>]                        Run SQL migrations"
+  send_output "  query [--path <db>] [--json|--list|--csv] <sql>  Execute a query"
+  send_output "  schema [--path <db>] [--json]                Dump database schema"
 }
 
 case "$SUBCMD" in
