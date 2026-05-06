@@ -15,37 +15,40 @@ recv() {
   printf '%s\n' "$line"
 }
 
-send_output() { send "{\"type\":\"output\",\"text\":\"$1\\n\"}"; }
-send_log() { send "{\"type\":\"log\",\"level\":\"$1\",\"message\":\"$2\"}"; }
+json_obj() { jq -cn "$@"; }
+
+send_output() { send "$(json_obj --arg t "$1
+" '{type:"output",text:$t}')"; }
+send_log() { send "$(json_obj --arg l "$1" --arg m "$2" '{type:"log",level:$l,message:$m}')"; }
 send_error() { send_log "error" "$1"; }
 
 send_exec() {
   local id="$1" cmd="$2" cwd="${3:-}"
   if [ -n "$cwd" ]; then
-    send "{\"type\":\"exec\",\"id\":\"$id\",\"command\":\"$cmd\",\"cwd\":\"$cwd\"}"
+    send "$(json_obj --arg id "$id" --arg cmd "$cmd" --arg cwd "$cwd" '{type:"exec",id:$id,command:$cmd,cwd:$cwd}')"
   else
-    send "{\"type\":\"exec\",\"id\":\"$id\",\"command\":\"$cmd\"}"
+    send "$(json_obj --arg id "$id" --arg cmd "$cmd" '{type:"exec",id:$id,command:$cmd}')"
   fi
   recv
 }
 
 send_store() {
   local key="$1" value="$2"
-  send "{\"type\":\"store\",\"key\":\"$key\",\"value\":\"$value\"}"
+  send "$(json_obj --arg k "$key" --arg v "$value" '{type:"store",key:$k,value:$v}')"
 }
 
 send_load() {
   local id="$1" key="$2"
-  send "{\"type\":\"load\",\"id\":\"$id\",\"key\":\"$key\"}"
+  send "$(json_obj --arg id "$id" --arg k "$key" '{type:"load",id:$id,key:$k}')"
   recv
 }
 
 send_prompt() {
   local id="$1" message="$2" default="${3:-}"
   if [ -n "$default" ]; then
-    send "{\"type\":\"prompt\",\"id\":\"$id\",\"message\":\"$message\",\"default\":\"$default\"}"
+    send "$(json_obj --arg id "$id" --arg m "$message" --arg d "$default" '{type:"prompt",id:$id,message:$m,default:$d}')"
   else
-    send "{\"type\":\"prompt\",\"id\":\"$id\",\"message\":\"$message\"}"
+    send "$(json_obj --arg id "$id" --arg m "$message" '{type:"prompt",id:$id,message:$m}')"
   fi
   recv
 }
@@ -240,9 +243,7 @@ cmd_query() {
   local stdout
   stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
-    local escaped
-    escaped=$(printf '%s' "$stdout" | jq -Rs '.')
-    send "{\"type\":\"output\",\"text\":$escaped}"
+    send "$(printf '%s' "$stdout" | jq -Rs '{type:"output",text:.}')"
   else
     send_output "(no results)"
   fi
@@ -271,9 +272,7 @@ cmd_schema() {
   local stdout
   stdout=$(resp_stdout "$result")
   if [ -n "$stdout" ]; then
-    local escaped
-    escaped=$(printf '%s' "$stdout" | jq -Rs '.')
-    send "{\"type\":\"output\",\"text\":$escaped}"
+    send "$(printf '%s' "$stdout" | jq -Rs '{type:"output",text:.}')"
   else
     send_output "(empty database)"
   fi
