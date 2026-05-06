@@ -223,6 +223,8 @@ cmd_query() {
   local db_path=""
   local format="column"
   local sql_parts=()
+  local param_names=()
+  local param_values=()
   local i=1
   while [ $i -lt ${#ARGV[@]} ]; do
     case "${ARGV[$i]}" in
@@ -230,6 +232,29 @@ cmd_query() {
       --list) format="list" ;;
       --csv) format="csv" ;;
       --json) format="json" ;;
+      --param)
+        i=$((i + 1))
+        local kv="${ARGV[$i]:-}"
+        local pname="${kv%%=*}"
+        local pval="${kv#*=}"
+        if [ -z "$pname" ] || [ "$pname" = "$kv" ]; then
+          send_error "Bad --param syntax: expected name=value, got '$kv'"
+          exit 1
+        fi
+        # Allow @name or :name; normalize to @name (sqlite3 supports both).
+        case "$pname" in
+          @*|:*) ;;
+          *) pname="@$pname" ;;
+        esac
+        # Strict name validation — anything else lets a malicious
+        # caller embed SQL after the @.
+        if ! [[ "${pname#[@:]}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+          send_error "Bad --param name: '$pname' (must match [A-Za-z_][A-Za-z0-9_]*)"
+          exit 1
+        fi
+        param_names+=("$pname")
+        param_values+=("$pval")
+        ;;
       *) sql_parts+=("${ARGV[$i]}") ;;
     esac
     i=$((i + 1))
@@ -247,7 +272,7 @@ cmd_query() {
 
   local sql="${sql_parts[*]+${sql_parts[*]}}"
   if [ -z "$sql" ]; then
-    send_error "Usage: fledge sql query [--list|--csv] <sql>"
+    send_error "Usage: fledge sql query [--list|--csv|--json] [--param name=value]... <sql>"
     exit 1
   fi
 
@@ -259,10 +284,34 @@ cmd_query() {
     *) sqlite_flags="-header -column" ;;
   esac
 
+  # Build sqlite3 input. If params are present, prefix with .parameter
+  # init and one .parameter set per binding — values are encoded as a
+  # hex BLOB and concatenated with an empty string to coerce to TEXT.
+  # This is the only sqlite3 CLI .parameter set form that handles
+  # arbitrary content (single quotes, double quotes, newlines, NULs)
+  # correctly — the CLI's whitespace tokenizer doesn't parse SQL string
+  # literals robustly, but hex blobs contain only [0-9a-f] and avoid
+  # every quoting hazard. Untrusted values can't inject SQL no matter
+  # what the user writes in the surrounding query.
+  local sqlite_input=""
+  if [ "${#param_names[@]}" -gt 0 ]; then
+    sqlite_input=".parameter init"$'\n'
+    local j=0
+    while [ "$j" -lt "${#param_names[@]}" ]; do
+      local pn="${param_names[$j]}"
+      local pv="${param_values[$j]}"
+      local hex
+      hex=$(printf '%s' "$pv" | od -A n -t x1 | tr -d ' \n')
+      sqlite_input+=".parameter set ${pn} x'${hex}'||''"$'\n'
+      j=$((j + 1))
+    done
+  fi
+  sqlite_input+="$sql"
+
   local result
-  local safe_sql
-  safe_sql=$(printf '%q' "$sql")
-  result=$(send_exec "query" "printf '%s' $safe_sql | sqlite3 $sqlite_flags '$db_path'" "$PROJECT_ROOT")
+  local safe_input
+  safe_input=$(printf '%q' "$sqlite_input")
+  result=$(send_exec "query" "printf '%s' $safe_input | sqlite3 $sqlite_flags '$db_path'" "$PROJECT_ROOT")
   local exit_code
   exit_code=$(resp_code "$result")
 

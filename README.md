@@ -19,7 +19,7 @@ $ fledge sql init
 Created database: .fledge/fledge.db
 ```
 
-### `fledge sql query <sql> [--path <db>] [--json | --csv | --list]`
+### `fledge sql query <sql> [--path <db>] [--json | --csv | --list] [--param name=value]...`
 
 Execute a SQL statement and display results. Defaults to table output.
 
@@ -35,6 +35,22 @@ Magpie,scout
 $ fledge sql query "INSERT INTO agents VALUES ('Rook', 'security')"
 OK
 ```
+
+#### Parameter binding
+
+For untrusted values, use `--param name=value` instead of interpolating into the SQL string. Bound values are passed as SQLite parameters, so they cannot inject SQL — even if the value contains quotes, semicolons, or `DROP TABLE`.
+
+```
+$ fledge sql query "SELECT * FROM agents WHERE name = @name" --param "name=O'Brien" --json
+[{"name":"O'Brien","role":"crow"}]
+
+# Injection attempt — value treated as plain text, no rows returned, table intact:
+$ fledge sql query "SELECT * FROM agents WHERE name = @name" \
+    --param "name=x'; DROP TABLE agents; --"
+(no results)
+```
+
+Parameter names match `[A-Za-z_][A-Za-z0-9_]*`; the leading `@` (or `:`) is optional. Repeat `--param` to bind multiple values.
 
 ### `fledge sql schema [--path <db>] [--json]`
 
@@ -71,13 +87,23 @@ Database files live in your project directory (default: `.fledge/fledge.db`). Re
 
 ## Security
 
-This plugin shells out to the `sqlite3` CLI. The SQL string you pass is shell-escaped (via `printf '%q'`) before being piped to `sqlite3`, which prevents *shell* injection — your SQL won't be split into multiple commands or interpreted by the shell.
+This plugin shells out to the `sqlite3` CLI. SQL strings are shell-escaped (via `printf '%q'`) before being piped to `sqlite3`, which prevents *shell* injection — your SQL won't be split into multiple commands or interpreted by the shell.
 
-**It does not prevent SQL injection.** SQL is passed verbatim to sqlite3. If you compose SQL with untrusted values via shell interpolation, you are responsible for escaping them — for example, **do not** write `fledge sql query "SELECT * FROM t WHERE name = '$user_input'"`. Either validate `$user_input` against an allowlist before substituting, or split the query into a parameterized form using a SQL client that supports bind parameters.
+**Use `--param name=value` for untrusted values** (see "Parameter binding" above). Bound values are encoded as SQL parameters and cannot inject SQL regardless of their content.
+
+If you compose SQL by interpolating values into the query string, **you** are responsible for the escaping. **Do not** write `fledge sql query "SELECT * FROM t WHERE name = '$user_input'"` — that's a SQL injection. Use `--param` instead.
 
 Migration filenames are SQL-escaped before being inserted into the `_migrations` tracking table. Each migration runs inside a `BEGIN;…COMMIT;` transaction with `sqlite3 -bail`, so a partial failure rolls back cleanly.
 
 The database file is created in the project-local `.fledge/` directory by default.
+
+## Tests
+
+```bash
+python3 test/test.py
+```
+
+13 tests cover init, migrate (apply, idempotency, transactional rollback), query (--json/--csv/--list), parameter binding (single quotes, double quotes, injection attempts), and schema dump.
 
 ## Prerequisites
 
