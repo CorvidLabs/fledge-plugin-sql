@@ -238,6 +238,7 @@ cmd_migrate() {
 cmd_query() {
   local db_path=""
   local format="column"
+  local allow_destructive=0
   local sql_parts=()
   local param_names=()
   local param_values=()
@@ -248,6 +249,7 @@ cmd_query() {
       --list) format="list" ;;
       --csv) format="csv" ;;
       --json) format="json" ;;
+      --allow-destructive) allow_destructive=1 ;;
       --param)
         i=$((i + 1))
         local kv="${ARGV[$i]:-}"
@@ -288,8 +290,27 @@ cmd_query() {
 
   local sql="${sql_parts[*]+${sql_parts[*]}}"
   if [ -z "$sql" ]; then
-    send_error "Usage: fledge sql query [--list|--csv|--json] [--param name=value]... <sql>"
+    send_error "Usage: fledge sql query [--list|--csv|--json] [--allow-destructive] [--param name=value]... <sql>"
     exit 1
+  fi
+
+  # Safety: block multi-statement queries (multiple semicolon-separated statements).
+  # Strip trailing whitespace/semicolons, then check for interior semicolons.
+  local trimmed
+  trimmed=$(printf '%s' "$sql" | sed 's/[[:space:];]*$//')
+  if printf '%s' "$trimmed" | grep -q ';'; then
+    send_error "Multi-statement queries are not supported for safety. Run each statement separately."
+    exit 1
+  fi
+
+  # Safety: block destructive DDL unless --allow-destructive is passed.
+  if [ "$allow_destructive" -eq 0 ]; then
+    local upper_sql
+    upper_sql=$(printf '%s' "$sql" | tr '[:lower:]' '[:upper:]')
+    if printf '%s' "$upper_sql" | grep -qE '(^|[[:space:]])(DROP|ALTER|TRUNCATE)[[:space:]]'; then
+      send_error "Destructive operation blocked. Use --allow-destructive to override."
+      exit 1
+    fi
   fi
 
   local sqlite_flags
@@ -322,7 +343,22 @@ cmd_query() {
       j=$((j + 1))
     done
   fi
-  sqlite_input+="$sql"
+  # Detect DML so we can query changes() in the same session.
+  local is_dml=0
+  local upper_sql_type
+  upper_sql_type=$(printf '%s' "$sql" | sed 's/^[[:space:]]*//' | tr '[:lower:]' '[:upper:]')
+  case "$upper_sql_type" in
+    INSERT*|UPDATE*|DELETE*) is_dml=1 ;;
+  esac
+
+  # For DML, append SELECT changes() to the same sqlite3 input so the
+  # row-count is captured in the same connection. The semicolon is safe
+  # here — the multi-statement guard already validated the *user* SQL.
+  if [ "$is_dml" -eq 1 ]; then
+    sqlite_input+="${sql}; SELECT changes();"
+  else
+    sqlite_input+="$sql"
+  fi
 
   local result
   local safe_input
@@ -340,7 +376,16 @@ cmd_query() {
 
   local stdout
   stdout=$(resp_stdout "$result")
-  if [ -n "$stdout" ]; then
+
+  if [ "$is_dml" -eq 1 ]; then
+    # The last line of output is the changes() count. For -json mode
+    # it is a JSON array like [{"changes()":1}]; for default mode it
+    # is just a plain number. Extract the numeric value either way.
+    local changes_n
+    changes_n=$(printf '%s' "$stdout" | grep -oE '[0-9]+' | tail -1)
+    changes_n="${changes_n:-0}"
+    send_output "{\"ok\":true,\"changes\":$changes_n}"
+  elif [ -n "$stdout" ]; then
     send "$(printf '%s' "$stdout" | jq -Rsc '{type:"output",text:.}')"
   else
     if [ "$format" = "json" ]; then
@@ -409,8 +454,8 @@ cmd_help() {
   send_output "Commands:"
   send_output "  init [--path <db>]                           Create a project database"
   send_output "  migrate [--dir <dir>]                        Run SQL migrations"
-  send_output "  query [--path <db>] [--json|--list|--csv] [--param name=value]... <sql>"
-  send_output "                                               Execute a query"
+  send_output "  query [--path <db>] [--json|--list|--csv] [--allow-destructive]"
+  send_output "        [--param name=value]... <sql>           Execute a query"
   send_output "  schema [--path <db>] [--json]                Dump database schema"
 }
 
