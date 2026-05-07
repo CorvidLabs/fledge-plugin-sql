@@ -217,6 +217,14 @@ def main() -> int:
                           "--param", 'x=has "double" quotes', "--json"])
         assert_in("param with double quotes", out, '"n":19')
 
+        # 12. --version flag
+        out = runner.run(["--version"])
+        assert_in("--version shows version", out, "fledge-plugin-sql 0.1.0")
+
+        # 13. help text mentions --param
+        out = runner.run(["help"])
+        assert_in("help mentions --param", out, "--param name=value")
+
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
