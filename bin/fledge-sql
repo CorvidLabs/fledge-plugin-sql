@@ -19,7 +19,7 @@ recv() {
 
 json_obj() { jq -cn "$@"; }
 
-send_output() { send "$(json_obj --arg t "$1" '{type:"output",text:$t}')"; }
+send_output() { local nl=$'\n'; send "$(json_obj --arg t "$1$nl" '{type:"output",text:$t}')"; }
 send_log() { send "$(json_obj --arg l "$1" --arg m "$2" '{type:"log",level:$l,message:$m}')"; }
 send_error() { send_log "error" "$1"; }
 
