@@ -1,7 +1,7 @@
 [plugin]
 name = "fledge-plugin-sql"
 version = "0.3.0"
-description = "SQLite database management — init, migrate, query, schema"
+description = "SQLite database management - init, migrate, query, schema"
 author = "CorvidLabs"
 protocol = "fledge-v1"
 
