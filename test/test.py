@@ -200,6 +200,55 @@ def main() -> int:
         out = runner.run(["query", "SELECT count(*) AS n FROM agents", "--json"])
         assert_in("SQL injection blocked via --param", out, '"n":2')
 
+        # 7b. destructive DDL blocked by default (DROP)
+        out = runner.run(["query", "DROP TABLE agents"])
+        assert_in("DROP blocked by default", out, "Destructive operation blocked")
+
+        # 7c. destructive DDL blocked (ALTER)
+        out = runner.run(["query", "ALTER TABLE agents ADD COLUMN email TEXT"])
+        assert_in("ALTER blocked by default", out, "Destructive operation blocked")
+
+        # 7d. destructive DDL blocked (TRUNCATE, case-insensitive)
+        out = runner.run(["query", "truncate table agents"])
+        assert_in("TRUNCATE blocked (lowercase)", out, "Destructive operation blocked")
+
+        # 7e. --allow-destructive bypasses DDL guard
+        # Use ALTER as it is non-destructive in practice for this test.
+        out = runner.run(["query", "ALTER TABLE agents ADD COLUMN email TEXT",
+                          "--allow-destructive"])
+        assert_not_in("--allow-destructive bypasses guard", out,
+                       "Destructive operation blocked")
+
+        # 7f. multi-statement blocked
+        out = runner.run(["query",
+                          "SELECT 1; DROP TABLE agents"])
+        assert_in("multi-statement blocked", out,
+                  "Multi-statement queries are not supported for safety")
+
+        # 7g. trailing semicolons are not flagged as multi-statement
+        out = runner.run(["query", "SELECT count(*) AS n FROM agents;", "--json"])
+        assert_not_in("trailing semicolon OK", out,
+                       "Multi-statement queries are not supported")
+
+        # 7h. DML success indicator (INSERT returns changes count)
+        out = runner.run(["query",
+                          "INSERT INTO agents (name, role) VALUES ('Piper', 'deploy')",
+                          "--json"])
+        assert_in("DML insert returns ok+changes", out, '"ok":true')
+        assert_in("DML insert changes count", out, '"changes":1')
+
+        # 7i. DML success indicator (UPDATE)
+        out = runner.run(["query",
+                          "UPDATE agents SET role='ops' WHERE name='Piper'",
+                          "--json"])
+        assert_in("DML update returns ok+changes", out, '"ok":true')
+
+        # 7j. DML success indicator (DELETE)
+        out = runner.run(["query",
+                          "DELETE FROM agents WHERE name='Piper'",
+                          "--json"])
+        assert_in("DML delete returns ok+changes", out, '"ok":true')
+
         # 8. bad --param syntax rejected
         out = runner.run(["query", "SELECT 1", "--param", "not-a-kv-pair"])
         assert_in("bad --param syntax rejected", out, "Bad --param syntax")
@@ -221,9 +270,10 @@ def main() -> int:
         out = runner.run(["--version"])
         assert_in("--version shows version", out, "fledge-plugin-sql 0.2.0")
 
-        # 13. help text mentions --param
+        # 13. help text mentions --param and --allow-destructive
         out = runner.run(["help"])
         assert_in("help mentions --param", out, "--param name=value")
+        assert_in("help mentions --allow-destructive", out, "--allow-destructive")
 
     finally:
         shutil.rmtree(work, ignore_errors=True)
