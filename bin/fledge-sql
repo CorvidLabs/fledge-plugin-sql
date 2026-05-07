@@ -11,7 +11,9 @@ send() { printf '%s\n' "$1" >&3; }
 
 recv() {
   local line
-  IFS= read -r line
+  if ! IFS= read -r line; then
+    exit 0
+  fi
   printf '%s\n' "$line"
 }
 
@@ -58,6 +60,11 @@ resp_stdout() { printf '%s' "$1" | jq -r '.value.stdout // ""' 2>/dev/null; }
 resp_stderr() { printf '%s' "$1" | jq -r '.value.stderr // ""' 2>/dev/null; }
 resp_code() { printf '%s' "$1" | jq -r '.value.code // 0' 2>/dev/null; }
 resp_value() { printf '%s' "$1" | jq -r '.value // empty' 2>/dev/null; }
+
+# --- Validate dependencies ---
+
+command -v jq >/dev/null 2>&1 || { printf '{"type":"log","level":"error","message":"jq not found — install jq before using fledge-plugin-sql"}\n' >&3; exit 1; }
+command -v sqlite3 >/dev/null 2>&1 || { send_error "sqlite3 not found — install SQLite before using fledge-plugin-sql"; exit 1; }
 
 # --- Parse init message ---
 
@@ -123,7 +130,16 @@ cmd_init() {
 
   local dir
   dir=$(dirname "$db_path")
-  send_exec "mkdir" "mkdir -p '$dir'" "$PROJECT_ROOT" > /dev/null
+  local mkdir_resp
+  mkdir_resp=$(send_exec "mkdir" "mkdir -p '$dir'" "$PROJECT_ROOT")
+  local mkdir_code
+  mkdir_code=$(resp_code "$mkdir_resp")
+  if [ "$mkdir_code" != "0" ]; then
+    local mkdir_err
+    mkdir_err=$(resp_stderr "$mkdir_resp")
+    send_error "Failed to create directory $dir: $mkdir_err"
+    exit 1
+  fi
   send_exec "create-db" "sqlite3 '$db_path' 'SELECT 1;'" "$PROJECT_ROOT" > /dev/null
   send_store "db_path" "$db_path"
   send_output "Created database at $db_path"
@@ -166,7 +182,7 @@ cmd_migrate() {
   send_exec "create-meta" "sqlite3 '$db_path' 'CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, filename TEXT UNIQUE, applied_at TEXT);'" "$PROJECT_ROOT" > /dev/null
 
   local files_resp
-  files_resp=$(send_exec "list-files" "ls -1 '$migrations_dir'/*.sql 2>/dev/null | sort" "$PROJECT_ROOT")
+  files_resp=$(send_exec "list-files" "find '$migrations_dir' -maxdepth 1 -name '*.sql' -print0 2>/dev/null | sort -z | tr '\\0' '\\n'" "$PROJECT_ROOT")
   local files
   files=$(resp_stdout "$files_resp")
 
@@ -393,8 +409,21 @@ cmd_help() {
   send_output "Commands:"
   send_output "  init [--path <db>]                           Create a project database"
   send_output "  migrate [--dir <dir>]                        Run SQL migrations"
-  send_output "  query [--path <db>] [--json|--list|--csv] <sql>  Execute a query"
+  send_output "  query [--path <db>] [--json|--list|--csv] [--param name=value]... <sql>"
+  send_output "                                               Execute a query"
   send_output "  schema [--path <db>] [--json]                Dump database schema"
+}
+
+cmd_version() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local plugin_toml="$script_dir/../plugin.toml"
+  local version
+  version=$(grep '^version' "$plugin_toml" 2>/dev/null | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/')
+  if [ -z "$version" ]; then
+    version="unknown"
+  fi
+  send_output "fledge-plugin-sql $version"
 }
 
 case "$SUBCMD" in
@@ -403,8 +432,9 @@ case "$SUBCMD" in
   query)   cmd_query ;;
   schema)  cmd_schema ;;
   help|--help|-h) cmd_help ;;
+  version|--version|-V) cmd_version ;;
   *)
-    send_error "Unknown command: $SUBCMD. Run: fledge sql help"
+    send_output "Unknown command: $SUBCMD. Run: fledge sql help"
     exit 1
     ;;
 esac
