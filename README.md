@@ -2,6 +2,8 @@
 
 SQLite database management plugin for [fledge](https://github.com/CorvidLabs/fledge). Init databases, run migrations, query with multiple output formats.
 
+![spec coverage](https://img.shields.io/endpoint?url=https://corvidlabs.github.io/fledge-plugin-sql/badges/coverage.json)
+
 ## Install
 
 ```bash
