@@ -3,14 +3,27 @@ name: test
 on:
   push:
     branches: [main]
+    paths:
+      - bin/**
+      - test/**
+      - .github/workflows/test.yml
   pull_request:
     branches: [main]
+    paths:
+      - bin/**
+      - test/**
+      - .github/workflows/test.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Verify dependencies
         run: |

@@ -268,7 +268,7 @@ def main() -> int:
 
         # 12. --version flag
         out = runner.run(["--version"])
-        assert_in("--version shows version", out, "fledge-plugin-sql 0.2.0")
+        assert_in("--version shows version", out, "fledge-plugin-sql 0.3.0")
 
         # 13. help text mentions --param and --allow-destructive
         out = runner.run(["help"])
