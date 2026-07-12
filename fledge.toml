@@ -1,0 +1,9 @@
+# fledge.toml — project task definitions
+[tasks]
+syntax = "bash -n bin/fledge-sql"
+test = "python3 test/test.py"
+manifest = "grep -q 'binary = \"bin/fledge-sql\"' plugin.toml && grep -q 'protocol = \"fledge-v1\"' plugin.toml"
+
+[lanes.verify]
+description = "Syntax-check and test the guarded SQLite plugin"
+steps = ["syntax", "test", "manifest"]

@@ -11,11 +11,25 @@ spec: sql.spec.md
 
 ## Acceptance Criteria
 
-- `fledge sql init` creates a database file and stores the path
-- `fledge sql migrate` applies unapplied .sql files in order and tracks them
-- `fledge sql query` executes SQL and returns formatted results
-- `fledge sql schema` shows all tables, indexes, and views
-- All commands use fledge-v1 protocol for I/O
+### REQ-sql-001
+
+`fledge sql init` creates the selected project database and stores its path through the host protocol.
+
+### REQ-sql-002
+
+`fledge sql migrate` applies unapplied SQL files in filename order, transactionally, and records them idempotently.
+
+### REQ-sql-003
+
+`fledge sql query` executes SQL against the initialized database and returns formatted results.
+
+### REQ-sql-004
+
+`fledge sql schema` shows user tables, indexes, and views for the initialized database.
+
+### REQ-sql-005
+
+All commands use the fledge-v1 protocol for input, output, persistence, and host execution.
 
 ## Constraints
 
