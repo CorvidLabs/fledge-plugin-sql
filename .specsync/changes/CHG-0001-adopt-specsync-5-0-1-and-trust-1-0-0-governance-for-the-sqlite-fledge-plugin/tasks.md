@@ -5,11 +5,14 @@ artifact: tasks
 
 # Tasks
 
-- [x] Preserve the active SQLite specification and assign deterministic IDs.
-- [x] Adopt and stamp SpecSync 5.0.1 with threshold-0 rationale.
+- [x] Audit the current executable and hermetic harness without modifying product behavior.
+- [x] Complete the active SQLite specification and assign REQ-sql-001 through REQ-sql-011.
+- [x] Adopt and stamp SpecSync 5.0.1 with the truthful extensionless-file threshold rationale.
 - [x] Install all four integrations.
-- [x] Add the three-step database safety lane and Trust policy.
+- [x] Replace generic SDD paths with repository-specific meaningful surfaces.
+- [x] Add deterministic governance validation to the existing database safety lane.
+- [x] Configure the standard Trust policy without changing existing CI or Pages workflows.
 - [x] Add the immutable Trust 1.0.0 workflow.
-- [x] Validate syntax, 26 tests, manifest, integrations, and Trust.
-- [ ] Record definition approval and execute the verified lifecycle.
-- [ ] Confirm hosted checks and preserve branch requirements.
+- [x] Prepare complete portable lifecycle artifacts for supported approval and verification commands.
+
+Closing approval and hosted CI success are intentionally not claimed as preparation tasks.

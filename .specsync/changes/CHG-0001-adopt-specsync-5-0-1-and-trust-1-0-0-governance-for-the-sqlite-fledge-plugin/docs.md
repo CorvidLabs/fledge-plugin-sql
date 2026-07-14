@@ -5,4 +5,7 @@ artifact: docs
 
 # Docs
 
-The managed `AGENTS.md` block documents the unified verification path. Existing public database behavior and safety guidance remains unchanged.
+The active spec and requirement companion now document all existing guarded-query,
+parameter, output, schema, diagnostic, version, and help behavior. The managed
+`AGENTS.md` block documents the unified verification path. Public README and Pages
+content, runtime behavior, and existing workflows remain unchanged by this migration.

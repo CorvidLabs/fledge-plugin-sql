@@ -1,3 +1,25 @@
 {
-  "approvals": []
+  "approvals": [
+    {
+      "gate": "definition",
+      "actor": "user:0xLeif",
+      "timestamp": 1784027433,
+      "digest": "b4880dedcdf0c9a6918f23ad18530a2c0e4a4a8a6af624d01fb81d7299c25fb4",
+      "note": "Definition approved after complete current-contract audit and successful repository-specific native verification; no hosted or closing result is claimed."
+    },
+    {
+      "gate": "definition",
+      "actor": "user:0xLeif",
+      "timestamp": 1784027489,
+      "digest": "59fdaf85b9142cdf08598887c401ad2c0d06b06f1eab95d9c4c378cddb623589",
+      "note": "Fresh definition approval after adding exact native evidence mapping for REQ-sql-001 through REQ-sql-011."
+    },
+    {
+      "gate": "acceptance",
+      "actor": "user:0xLeif",
+      "timestamp": 1784027518,
+      "digest": "a66525519d8705526254f204226b557d8467d2bc09d736b2f066ed450a551a70",
+      "note": "Closing approval recorded after strict SpecSync validation, complete REQ-sql-001..REQ-sql-011 evidence, and successful four-step native verification; hosted CI is not claimed."
+    }
+  ]
 }

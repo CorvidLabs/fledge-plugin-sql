@@ -5,4 +5,9 @@ artifact: context
 
 # Context
 
-The SQLite plugin manages project-local initialization, transactional migrations, guarded ad-hoc queries, and schema inspection through fledge-v1. The rollout adopts its active contract without weakening persistence or destructive-query safety.
+The extensionless Bash plugin manages project-local initialization, transactional
+migrations, guarded queries, parameter binding, result formatting, schema
+inspection, and version/help output through fledge-v1. The original rollout
+captured only the four headline database commands and used generic SDD paths.
+This migration completes the current contract and repository-specific policy
+without changing the executable, existing CI, or Pages publication.
