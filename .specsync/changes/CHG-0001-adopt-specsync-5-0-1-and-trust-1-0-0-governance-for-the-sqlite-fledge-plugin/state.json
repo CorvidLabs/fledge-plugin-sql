@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "CHG-0001-adopt-specsync-5-0-1-and-trust-1-0-0-governance-for-the-sqlite-fledge-plugin",
+  "slug": "adopt-specsync-5-0-1-and-trust-1-0-0-governance-for-the-sqlite-fledge-plugin",
+  "title": "Adopt SpecSync 5.0.1 and Trust 1.0.0 governance for the SQLite Fledge plugin",
+  "description": "Adopt SpecSync 5.0.1 and Trust 1.0.0 governance for the SQLite Fledge plugin",
+  "kind": "migration",
+  "state": "accepted",
+  "base_commit": "a4e307b1607bb9b2cad4d62488d634643552526e",
+  "created_at": 1783883062,
+  "updated_at": 1784027518,
+  "affected_specs": [
+    "sql"
+  ],
+  "affected_paths": [
+    "bin/",
+    "test/",
+    "plugin.toml",
+    "fledge.toml",
+    ".github/",
+    ".specsync/",
+    "specs/",
+    ".trust.toml",
+    ".augur.toml",
+    ".attest.json",
+    ".claude/",
+    ".cursor/",
+    ".codex/",
+    ".gemini/"
+  ],
+  "no_spec_change": false,
+  "no_spec_change_rationale": null,
+  "acceptance_criteria": [
+    "The active specification accurately covers every existing command, option, safety guard, result form, dependency, and error boundary without changing runtime behavior.",
+    "REQ-sql-001 through REQ-sql-011 are deterministic and the repository-specific SDD policy covers every implementation, test, documentation, workflow, and governance surface.",
+    "SpecSync strict forced validation passes at the explicit advisory threshold for the extensionless Bash executable, with all four agent integrations installed.",
+    "The Fledge lane passes governance validation, Bash syntax, all 26 hermetic database cases, and manifest validation; Trust doctor and verification also pass.",
+    "Exact-head hosted checks pass, the branch remains conflict-free, and no unresolved review thread remains before promotion."
+  ],
+  "selected_artifacts": [
+    "context",
+    "research",
+    "design",
+    "plan",
+    "tasks",
+    "testing",
+    "docs"
+  ],
+  "dependencies": [],
+  "answers": {
+    "architecture_risk": "yes",
+    "public_contract": "no"
+  }
+}
